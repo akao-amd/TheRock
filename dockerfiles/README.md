@@ -118,6 +118,71 @@ access (e.g., `--device=/dev/kfd --device=/dev/dri`).
 See the header comments in [`rocm_runtime.Dockerfile`](rocm_runtime.Dockerfile)
 for supported base images, build arguments, and build/run examples.
 
+### `sglang_dev.Dockerfile`
+
+| Source .Dockerfile                             | Published package                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------------- |
+| [`sglang_dev.Dockerfile`](sglang_dev.Dockerfile) | https://github.com/ROCm/TheRock/pkgs/container/sglang_dev           |
+
+This Dockerfile builds a complete SGLang development environment based on
+TheRock ROCm artifacts. Includes PyTorch ROCm, SGLang, and related ML/AI tools
+optimized for AMD GPUs (primarily gfx950).
+
+**Key Features:**
+- ROCm installation from TheRock nightly artifacts
+- PyTorch ROCm from AMD nightly wheels
+- SGLang with ROCm/HIP support
+- Pre-configured performance environment variables
+- Automated nightly builds
+
+**Build Arguments:**
+- `BASE_IMAGE` - Base Docker image (default: ubuntu:24.04)
+- `THEROCK_VERSION` - TheRock ROCm version (e.g., 7.12.0a20260318)
+- `AMDGPU_FAMILY` - AMD GPU family (default: gfx950)
+- `RELEASE_TYPE` - Release type (default: nightlies)
+- `PYTHON_VERSION` - Python version (default: 3.12, must match base image)
+- `TORCH_INDEX` - PyTorch wheel index URL (see mappings below)
+- `GPU_ARCH` - GPU architecture for kernel compilation (default: gfx950)
+
+**PyTorch Index Mappings:**
+- gfx950 → `https://rocm.nightlies.amd.com/v2-staging/gfx950-dcgpu/`
+- gfx942 → `https://rocm.nightlies.amd.com/v2-staging/gfx94X-dcgpu/`
+
+**Build Example:**
+```bash
+docker build \
+  --build-arg THEROCK_VERSION=7.12.0a20260318 \
+  --build-arg AMDGPU_FAMILY=gfx950 \
+  -f dockerfiles/sglang_dev.Dockerfile \
+  -t sglang-dev:gfx950-7.12.0a20260318 \
+  dockerfiles/
+```
+
+**Build Example (gfx942):**
+```bash
+docker build \
+  --build-arg THEROCK_VERSION=7.12.0a20260318 \
+  --build-arg AMDGPU_FAMILY=gfx94X-dcgpu \
+  --build-arg GPU_ARCH=gfx942 \
+  --build-arg TORCH_INDEX=https://rocm.nightlies.amd.com/v2-staging/gfx94X-dcgpu/ \
+  -f dockerfiles/sglang_dev.Dockerfile \
+  -t sglang-dev:gfx942-7.12.0a20260318 \
+  dockerfiles/
+```
+
+**Run Example:**
+```bash
+docker run --rm -it --device=/dev/kfd --device=/dev/dri \
+  --security-opt seccomp=unconfined \
+  ghcr.io/rocm/sglang_dev:latest bash
+```
+
+**Published Images:**
+- `ghcr.io/rocm/sglang_dev:<version>-<family>` - Versioned builds (e.g., `7.12.0a20260318-gfx950`)
+
+See [`.github/workflows/release-sglang-dev-daily-image.yml`](/.github/workflows/release-sglang-dev-daily-image.yml)
+for the automated publishing workflow.
+
 Supporting scripts:
 
 - [`install_rocm_deps.sh`](install_rocm_deps.sh): Auto-detects the distribution
@@ -176,6 +241,10 @@ workflow is used by other `publish_*.yml` workflows:
 | [`.github/workflows/publish_build_manylinux_x86_64.yml`](/.github/workflows/publish_build_manylinux_x86_64.yml)           | [actions/workflows/publish_build_manylinux_x86_64.yml](https://github.com/ROCm/TheRock/actions/workflows/publish_build_manylinux_x86_64.yml)           |
 | [`.github/workflows/publish_build_manylinux_rccl_x86_64.yml`](/.github/workflows/publish_build_manylinux_rccl_x86_64.yml) | [actions/workflows/publish_build_manylinux_rccl_x86_64.yml](https://github.com/ROCm/TheRock/actions/workflows/publish_build_manylinux_rccl_x86_64.yml) |
 | [`.github/workflows/publish_no_rocm_image_ubuntu24_04.yml`](/.github/workflows/publish_no_rocm_image_ubuntu24_04.yml)     | [actions/workflows/publish_no_rocm_image_ubuntu24_04.yml](https://github.com/ROCm/TheRock/actions/workflows/publish_no_rocm_image_ubuntu24_04.yml)     |
+| [`.github/workflows/release-sglang-dev-daily-image.yml`](/.github/workflows/release-sglang-dev-daily-image.yml)           | [actions/workflows/release-sglang-dev-daily-image.yml](https://github.com/ROCm/TheRock/actions/workflows/release-sglang-dev-daily-image.yml)           |
+
+**Note:** The `release-sglang-dev-daily-image.yml` workflow uses a custom build process (not `publish_dockerfile.yml`)
+to install TheRock artifacts during Docker build and runs on a nightly schedule.
 
 Tags for built docker images are set based on the branch name pattern:
 

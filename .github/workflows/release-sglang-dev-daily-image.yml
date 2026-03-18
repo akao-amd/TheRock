@@ -1,0 +1,115 @@
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
+
+name: Release SGLang Dev Daily Image
+
+on:
+  # Nightly build at 6 AM UTC (after TheRock nightly artifacts are published)
+  schedule:
+    - cron: "0 6 * * *"
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      therock_version:
+        description: "TheRock version to use (e.g., 7.12.0a20260318). Leave empty for latest nightly."
+        type: string
+        default: ""
+      amdgpu_family:
+        description: "AMD GPU family"
+        type: choice
+        options:
+          - gfx950
+          - gfx94X-dcgpu
+        default: "gfx950"
+
+  # Trigger on Dockerfile changes
+  push:
+    branches:
+      - 'main'
+      - 'stage/docker/**'
+    paths:
+      - dockerfiles/sglang_dev.Dockerfile
+      - .github/workflows/release-sglang-dev-daily-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-24.04
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ROCm/sglang_dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: 3.12
+
+      - name: Determine TheRock version
+        id: version
+        run: |
+          AMDGPU_FAMILY="${{ inputs.amdgpu_family || 'gfx950' }}"
+
+          if [ -n "${{ inputs.therock_version }}" ]; then
+            VERSION="${{ inputs.therock_version }}"
+            echo "Using manually specified version: ${VERSION}"
+          else
+            # For scheduled builds, use a default recent nightly version
+            # In production, this could query the latest from S3 or artifacts API
+            VERSION="7.12.0a$(date +%Y%m%d)"
+            echo "Using default nightly version: ${VERSION}"
+            echo "NOTE: Update this logic to fetch actual latest version if needed"
+          fi
+
+          echo "THEROCK_VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "AMDGPU_FAMILY=${AMDGPU_FAMILY}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine Docker tag
+        id: tag
+        run: |
+          ref="${{ github.ref_name }}"
+          if [[ "$ref" == stage/docker/* ]]; then
+            suffix="${ref#stage/docker/}"
+            echo "TAG_SUFFIX=stage-${suffix}" >> "$GITHUB_OUTPUT"
+          elif [[ "$ref" == "main" ]]; then
+            echo "TAG_SUFFIX=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG_SUFFIX=${ref}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.THEROCK_VERSION }}-${{ steps.version.outputs.AMDGPU_FAMILY }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: dockerfiles/
+          file: dockerfiles/sglang_dev.Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=ubuntu:24.04
+            THEROCK_VERSION=${{ steps.version.outputs.THEROCK_VERSION }}
+            AMDGPU_FAMILY=${{ steps.version.outputs.AMDGPU_FAMILY }}
+            RELEASE_TYPE=nightlies
+            PYTHON_VERSION=3.12
+            GPU_ARCH=${{ steps.version.outputs.AMDGPU_FAMILY }}
